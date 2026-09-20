@@ -12,6 +12,7 @@ import (
 	fiberlogger "github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/6ill/alert-correlation-engine/internal/config"
 	"github.com/6ill/alert-correlation-engine/internal/handler"
@@ -32,9 +33,22 @@ func main() {
 	}
 	defer pool.Close()
 
+	redisClient := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
+	if err := redisClient.Ping(context.Background()).Err(); err != nil {
+		slog.Error("failed to connect to redis", "error", err)
+		os.Exit(1)
+	}
+	defer redisClient.Close()
+
 	alertRepo := repository.NewAlertRepository(pool)
+	incidentRepo := repository.NewIncidentRepository(pool)
+	correlationRepo := repository.NewCorrelationRepository(redisClient)
+	suppressionRepo := repository.NewSuppressionRepository(pool)
+
 	alertSvc := service.NewAlertService(alertRepo)
-	alertHandler := handler.NewAlertHandler(alertSvc)
+	correlationSvc := service.NewCorrelationService(incidentRepo, correlationRepo)
+	suppressionSvc := service.NewSuppressionService(suppressionRepo)
+	alertHandler := handler.NewAlertHandler(alertSvc, suppressionSvc, correlationSvc)
 
 	app := fiber.New()
 	app.Use(fiberlogger.New())

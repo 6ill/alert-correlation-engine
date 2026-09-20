@@ -11,11 +11,17 @@ import (
 )
 
 type AlertHandler struct {
-	svc *service.AlertService
+	alertSvc       *service.AlertService
+	suppressionSvc *service.SuppressionService
+	correlationSvc *service.CorrelationService
 }
 
-func NewAlertHandler(svc *service.AlertService) *AlertHandler {
-	return &AlertHandler{svc: svc}
+func NewAlertHandler(
+	alertSvc *service.AlertService,
+	suppressionSvc *service.SuppressionService,
+	correlationSvc *service.CorrelationService,
+) *AlertHandler {
+	return &AlertHandler{alertSvc: alertSvc, suppressionSvc: suppressionSvc, correlationSvc: correlationSvc}
 }
 
 func (h *AlertHandler) RegisterRoutes(router fiber.Router) {
@@ -34,18 +40,54 @@ func (h *AlertHandler) Create(c *fiber.Ctx) error {
 	if a.Timestamp.IsZero() {
 		a.Timestamp = time.Now()
 	}
+	if a.Status == "" {
+		a.Status = model.AlertStatusFiring
+	}
 
-	result, err := h.svc.Ingest(c.Context(), a, c.Body())
+	ingestResult, err := h.alertSvc.Ingest(c.Context(), a, c.Body())
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
 	}
 
-	status := fiber.StatusCreated
-	if result.Status == "duplicate_ignored" {
-		status = fiber.StatusOK
+	if ingestResult.Status == "duplicate_ignored" {
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{
+			"status":      ingestResult.Status,
+			"fingerprint": ingestResult.Fingerprint,
+		})
 	}
-	return c.Status(status).JSON(fiber.Map{
-		"status":      result.Status,
-		"fingerprint": result.Fingerprint,
+
+	// Suppression only applies to firing alerts - a resolve event always
+	// goes straight to the correlation engine so an open incident can
+	// actually be closed.
+	if a.Status == model.AlertStatusFiring {
+		rule, err := h.suppressionSvc.Match(c.Context(), a.ResourceType, a.MetricType, a.Timestamp)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+		}
+		if rule != nil {
+			return c.Status(fiber.StatusOK).JSON(fiber.Map{
+				"status":             "suppressed_known_pattern",
+				"fingerprint":        ingestResult.Fingerprint,
+				"suppression_rule":   rule.Name,
+				"suppression_reason": rule.Reason,
+			})
+		}
+	}
+
+	correlationResult, err := h.correlationSvc.Correlate(
+		c.Context(),
+		ingestResult.Fingerprint,
+		a.MetricType,
+		a.Status == model.AlertStatusResolved,
+	)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"status":            ingestResult.Status,
+		"fingerprint":       ingestResult.Fingerprint,
+		"incident_id":       correlationResult.IncidentID,
+		"correlation_event": correlationResult.Event,
 	})
 }
