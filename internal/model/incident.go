@@ -14,6 +14,10 @@ const (
 type Incident struct {
 	ID              int64
 	Fingerprint     string
+	Account         string
+	ResourceID      string
+	ResourceType    string
+	MetricType      string
 	Status          IncidentStatus
 	OccurrenceCount int
 	FlapCount       int

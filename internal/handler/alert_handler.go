@@ -77,7 +77,12 @@ func (h *AlertHandler) Create(c *fiber.Ctx) error {
 	correlationResult, err := h.correlationSvc.Correlate(
 		c.Context(),
 		ingestResult.Fingerprint,
-		a.MetricType,
+		model.AlertIdentity{
+			Account:      a.Account,
+			ResourceID:   a.ResourceID,
+			ResourceType: a.ResourceType,
+			MetricType:   a.MetricType,
+		},
 		a.Status == model.AlertStatusResolved,
 	)
 	if err != nil {

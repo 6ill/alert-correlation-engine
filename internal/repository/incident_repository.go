@@ -23,18 +23,18 @@ func NewIncidentRepository(pool *pgxpool.Pool) *IncidentRepository {
 // CreateOpen inserts a brand new open incident for a fingerprint that has
 // no active correlation window in Redis. occurrence_count and flap_count
 // start at their table defaults (1 and 0).
-func (r *IncidentRepository) CreateOpen(ctx context.Context, fingerprint string) (*model.Incident, error) {
+func (r *IncidentRepository) CreateOpen(ctx context.Context, fingerprint string, identity model.AlertIdentity) (*model.Incident, error) {
 	row := r.pool.QueryRow(ctx, `
-		INSERT INTO incidents (fingerprint, status)
-		VALUES ($1, 'open')
-		RETURNING id, fingerprint, status, occurrence_count, flap_count, first_seen, last_seen, resolved_at, updated_at
-	`, fingerprint)
+		INSERT INTO incidents (fingerprint, account, resource_id, resource_type, metric_type, status)
+		VALUES ($1, $2, $3, $4, $5, 'open')
+		RETURNING id, fingerprint, account, resource_id, resource_type, metric_type, status, occurrence_count, flap_count, first_seen, last_seen, resolved_at, updated_at
+	`, fingerprint, identity.Account, identity.ResourceID, identity.ResourceType, identity.MetricType)
 	return scanIncident(row)
 }
 
 func (r *IncidentRepository) GetByID(ctx context.Context, id int64) (*model.Incident, error) {
 	row := r.pool.QueryRow(ctx, `
-		SELECT id, fingerprint, status, occurrence_count, flap_count, first_seen, last_seen, resolved_at, updated_at
+		SELECT id, fingerprint, account, resource_id, resource_type, metric_type, status, occurrence_count, flap_count, first_seen, last_seen, resolved_at, updated_at
 		FROM incidents WHERE id = $1
 	`, id)
 	return scanIncident(row)
@@ -87,7 +87,8 @@ func (r *IncidentRepository) MarkResolved(ctx context.Context, id int64) error {
 func scanIncident(row pgx.Row) (*model.Incident, error) {
 	var inc model.Incident
 	err := row.Scan(
-		&inc.ID, &inc.Fingerprint, &inc.Status, &inc.OccurrenceCount, &inc.FlapCount,
+		&inc.ID, &inc.Fingerprint, &inc.Account, &inc.ResourceID, &inc.ResourceType, &inc.MetricType,
+		&inc.Status, &inc.OccurrenceCount, &inc.FlapCount,
 		&inc.FirstSeen, &inc.LastSeen, &inc.ResolvedAt, &inc.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {

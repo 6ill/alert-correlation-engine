@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/6ill/alert-correlation-engine/internal/model"
 	"github.com/6ill/alert-correlation-engine/internal/repository"
 )
 
@@ -38,14 +39,14 @@ func NewCorrelationService(incidents *repository.IncidentRepository, correlation
 	return &CorrelationService{incidents: incidents, correlation: correlation}
 }
 
-func (s *CorrelationService) Correlate(ctx context.Context, fingerprint, metricType string, resolved bool) (CorrelationResult, error) {
+func (s *CorrelationService) Correlate(ctx context.Context, fingerprint string, identity model.AlertIdentity, resolved bool) (CorrelationResult, error) {
 	if resolved {
 		return s.handleResolve(ctx, fingerprint)
 	}
-	return s.handleFiring(ctx, fingerprint, metricType)
+	return s.handleFiring(ctx, fingerprint, identity)
 }
 
-func (s *CorrelationService) handleFiring(ctx context.Context, fingerprint, metricType string) (CorrelationResult, error) {
+func (s *CorrelationService) handleFiring(ctx context.Context, fingerprint string, identity model.AlertIdentity) (CorrelationResult, error) {
 	// If already active, merge into it and slide the correlation window
 	// forward - each new occurrence within the window keeps it alive longer,
 	// rather than expiring on a fixed clock from the first occurrence.
@@ -53,7 +54,7 @@ func (s *CorrelationService) handleFiring(ctx context.Context, fingerprint, metr
 		if err := s.incidents.IncrementOccurrence(ctx, incidentID); err != nil {
 			return CorrelationResult{}, err
 		}
-		if err := s.correlation.SetActive(ctx, fingerprint, incidentID, metricType); err != nil {
+		if err := s.correlation.SetActive(ctx, fingerprint, incidentID, identity.MetricType); err != nil {
 			return CorrelationResult{}, err
 		}
 		return CorrelationResult{IncidentID: incidentID, Event: CorrelationEventMerged}, nil
@@ -66,7 +67,7 @@ func (s *CorrelationService) handleFiring(ctx context.Context, fingerprint, metr
 		if err := s.incidents.Reopen(ctx, incidentID); err != nil {
 			return CorrelationResult{}, err
 		}
-		if err := s.correlation.SetActive(ctx, fingerprint, incidentID, metricType); err != nil {
+		if err := s.correlation.SetActive(ctx, fingerprint, incidentID, identity.MetricType); err != nil {
 			return CorrelationResult{}, err
 		}
 		return CorrelationResult{IncidentID: incidentID, Event: CorrelationEventReopenedFlapping}, nil
@@ -75,11 +76,11 @@ func (s *CorrelationService) handleFiring(ctx context.Context, fingerprint, metr
 	}
 
 	// New incident
-	incident, err := s.incidents.CreateOpen(ctx, fingerprint)
+	incident, err := s.incidents.CreateOpen(ctx, fingerprint, identity)
 	if err != nil {
 		return CorrelationResult{}, err
 	}
-	if err := s.correlation.SetActive(ctx, fingerprint, incident.ID, metricType); err != nil {
+	if err := s.correlation.SetActive(ctx, fingerprint, incident.ID, identity.MetricType); err != nil {
 		return CorrelationResult{}, err
 	}
 	return CorrelationResult{IncidentID: incident.ID, Event: CorrelationEventNewIncident}, nil
