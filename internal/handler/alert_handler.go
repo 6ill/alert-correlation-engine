@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -46,6 +47,7 @@ func (h *AlertHandler) Create(c *fiber.Ctx) error {
 
 	ingestResult, err := h.alertSvc.Ingest(c.Context(), a, c.Body())
 	if err != nil {
+		slog.Error("failed to ingest alert", "error", err, "raw_alert_id", a.RawAlertID)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
 	}
 
@@ -62,6 +64,7 @@ func (h *AlertHandler) Create(c *fiber.Ctx) error {
 	if a.Status == model.AlertStatusFiring {
 		rule, err := h.suppressionSvc.Match(c.Context(), a.ResourceType, a.MetricType, a.Timestamp)
 		if err != nil {
+			slog.Error("failed to check suppression rules", "error", err, "fingerprint", ingestResult.Fingerprint)
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
 		}
 		if rule != nil {
@@ -86,6 +89,7 @@ func (h *AlertHandler) Create(c *fiber.Ctx) error {
 		a.Status == model.AlertStatusResolved,
 	)
 	if err != nil {
+		slog.Error("failed to correlate alert", "error", err, "fingerprint", ingestResult.Fingerprint)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
 	}
 
