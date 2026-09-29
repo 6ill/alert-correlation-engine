@@ -44,17 +44,23 @@ func main() {
 	incidentRepo := repository.NewIncidentRepository(pool)
 	correlationRepo := repository.NewCorrelationRepository(redisClient)
 	suppressionRepo := repository.NewSuppressionRepository(pool)
+	rcaRepo := repository.NewRCARepository(pool)
 
 	alertSvc := service.NewAlertService(alertRepo)
 	correlationSvc := service.NewCorrelationService(incidentRepo, correlationRepo)
 	suppressionSvc := service.NewSuppressionService(suppressionRepo)
-	alertHandler := handler.NewAlertHandler(alertSvc, suppressionSvc, correlationSvc)
+	rcaSvc := service.NewRCAService(rcaRepo)
+	incidentSvc := service.NewIncidentService(incidentRepo, alertRepo, rcaSvc)
+
+	alertHandler := handler.NewAlertHandler(alertSvc, suppressionSvc, correlationSvc, rcaSvc)
+	rcaHandler := handler.NewRCAHandler(rcaSvc)
+	incidentHandler := handler.NewIncidentHandler(incidentSvc)
 
 	app := fiber.New()
 	app.Use(fiberlogger.New())
 	app.Use(recover.New())
 
-	httpserver.NewRouter(app, alertHandler)
+	httpserver.NewRouter(app, alertHandler, rcaHandler, incidentHandler)
 
 	go func() {
 		slog.Info("server starting", "port", cfg.Port)

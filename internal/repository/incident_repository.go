@@ -16,6 +16,10 @@ type IncidentRepository struct {
 	pool *pgxpool.Pool
 }
 
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
 func NewIncidentRepository(pool *pgxpool.Pool) *IncidentRepository {
 	return &IncidentRepository{pool: pool}
 }
@@ -84,7 +88,7 @@ func (r *IncidentRepository) MarkResolved(ctx context.Context, id int64) error {
 	return err
 }
 
-func scanIncident(row pgx.Row) (*model.Incident, error) {
+func scanIncident(row rowScanner) (*model.Incident, error) {
 	var inc model.Incident
 	err := row.Scan(
 		&inc.ID, &inc.Fingerprint, &inc.Account, &inc.ResourceID, &inc.ResourceType, &inc.MetricType,
@@ -98,4 +102,30 @@ func scanIncident(row pgx.Row) (*model.Incident, error) {
 		return nil, err
 	}
 	return &inc, nil
+}
+
+// List returns incidents ordered by most recently updated first, optionally
+// filtered by status ("" means no filter). Powers the dashboard's incident list view.
+func (r *IncidentRepository) List(ctx context.Context, status string, limit int) ([]model.Incident, error) {
+	const columns = `id, fingerprint, account, resource_id, resource_type, metric_type, status, occurrence_count, flap_count, first_seen, last_seen, resolved_at, updated_at`
+
+	var rows pgx.Rows
+	var err error
+	if status == "" {
+		rows, err = r.pool.Query(ctx, `SELECT `+columns+` FROM incidents ORDER BY updated_at DESC LIMIT $1`, limit)
+	} else {
+		rows, err = r.pool.Query(ctx, `SELECT `+columns+` FROM incidents WHERE status = $1 ORDER BY updated_at DESC LIMIT $2`, status, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (model.Incident, error) {
+		inc, err := scanIncident(row)
+		if err != nil {
+			return model.Incident{}, err
+		}
+		return *inc, nil
+	})
 }

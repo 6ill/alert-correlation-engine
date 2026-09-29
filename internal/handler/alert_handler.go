@@ -15,14 +15,21 @@ type AlertHandler struct {
 	alertSvc       *service.AlertService
 	suppressionSvc *service.SuppressionService
 	correlationSvc *service.CorrelationService
+	rcaSvc         *service.RCAService
 }
 
 func NewAlertHandler(
 	alertSvc *service.AlertService,
 	suppressionSvc *service.SuppressionService,
 	correlationSvc *service.CorrelationService,
+	rcaSvc *service.RCAService,
 ) *AlertHandler {
-	return &AlertHandler{alertSvc: alertSvc, suppressionSvc: suppressionSvc, correlationSvc: correlationSvc}
+	return &AlertHandler{
+		alertSvc:       alertSvc,
+		suppressionSvc: suppressionSvc,
+		correlationSvc: correlationSvc,
+		rcaSvc:         rcaSvc,
+	}
 }
 
 func (h *AlertHandler) RegisterRoutes(router fiber.Router) {
@@ -93,10 +100,24 @@ func (h *AlertHandler) Create(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+	response := fiber.Map{
 		"status":            ingestResult.Status,
 		"fingerprint":       ingestResult.Fingerprint,
 		"incident_id":       correlationResult.IncidentID,
 		"correlation_event": correlationResult.Event,
-	})
+	}
+
+	if correlationResult.Event == service.CorrelationEventNewIncident {
+		suggestions, err := h.rcaSvc.Suggest(c.Context(), a.ResourceType, a.MetricType)
+		if err != nil {
+			slog.Error("failed to suggest RCA", "error", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
+		}
+
+		if len(suggestions) > 0 {
+			response["rca_suggestions"] = suggestions
+		}
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(response)
 }

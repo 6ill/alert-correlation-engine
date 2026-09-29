@@ -20,3 +20,13 @@ type Alert struct {
 	Timestamp    time.Time   `json:"timestamp"`
 	Status       AlertStatus `json:"status"`
 }
+
+// AlertSummary is a lightweight read model for displaying an alert's past
+// occurrences (e.g. "related events" on an incident's detail view)..
+type AlertSummary struct {
+	RawAlertID string    `json:"raw_alert_id"`
+	MetricType string    `json:"metric_type"`
+	Value      float64   `json:"value"`
+	Severity   string    `json:"severity"`
+	ReceivedAt time.Time `json:"received_at"`
+}
