@@ -40,6 +40,11 @@ func main() {
 	}
 	defer redisClient.Close()
 
+	var tcopBasicAuthUsers map[string]string
+	if cfg.TCOPWebhookUsername != "" {
+		tcopBasicAuthUsers = map[string]string{cfg.TCOPWebhookUsername: cfg.TCOPWebhookPassword}
+	}
+
 	alertRepo := repository.NewAlertRepository(pool)
 	incidentRepo := repository.NewIncidentRepository(pool)
 	correlationRepo := repository.NewCorrelationRepository(redisClient)
@@ -53,17 +58,19 @@ func main() {
 	rcaSvc := service.NewRCAService(rcaRepo)
 	incidentSvc := service.NewIncidentService(incidentRepo, alertRepo, rcaSvc)
 	statsSvc := service.NewStatsService(statsRepo)
+	alertPipelineSvc := service.NewAlertPipelineService(alertSvc, suppressionSvc, correlationSvc, rcaSvc)
 
-	alertHandler := handler.NewAlertHandler(alertSvc, suppressionSvc, correlationSvc, rcaSvc)
+	alertHandler := handler.NewAlertHandler(alertPipelineSvc)
 	rcaHandler := handler.NewRCAHandler(rcaSvc)
 	incidentHandler := handler.NewIncidentHandler(incidentSvc)
 	statsHandler := handler.NewStatsHandler(statsSvc)
+	tcopWebhookHandler := handler.NewTCOPWebhookHandler(alertPipelineSvc, cfg.TCOPWebhookToken, tcopBasicAuthUsers)
 
 	app := fiber.New()
 	app.Use(fiberlogger.New())
 	app.Use(recover.New())
 
-	httpserver.NewRouter(app, alertHandler, rcaHandler, incidentHandler, statsHandler)
+	httpserver.NewRouter(app, alertHandler, rcaHandler, incidentHandler, statsHandler, tcopWebhookHandler)
 
 	go func() {
 		slog.Info("server starting", "port", cfg.Port)

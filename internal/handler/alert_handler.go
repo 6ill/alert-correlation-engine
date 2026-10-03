@@ -12,24 +12,13 @@ import (
 )
 
 type AlertHandler struct {
-	alertSvc       *service.AlertService
-	suppressionSvc *service.SuppressionService
-	correlationSvc *service.CorrelationService
-	rcaSvc         *service.RCAService
+	alertPipelineSvc *service.AlertPipelineService
 }
 
 func NewAlertHandler(
-	alertSvc *service.AlertService,
-	suppressionSvc *service.SuppressionService,
-	correlationSvc *service.CorrelationService,
-	rcaSvc *service.RCAService,
+	alertPipelineSvc *service.AlertPipelineService,
 ) *AlertHandler {
-	return &AlertHandler{
-		alertSvc:       alertSvc,
-		suppressionSvc: suppressionSvc,
-		correlationSvc: correlationSvc,
-		rcaSvc:         rcaSvc,
-	}
+	return &AlertHandler{alertPipelineSvc: alertPipelineSvc}
 }
 
 func (h *AlertHandler) RegisterRoutes(router fiber.Router) {
@@ -52,72 +41,16 @@ func (h *AlertHandler) Create(c *fiber.Ctx) error {
 		a.Status = model.AlertStatusFiring
 	}
 
-	ingestResult, err := h.alertSvc.Ingest(c.Context(), a, c.Body())
+	result, err := h.alertPipelineSvc.Process(c.Context(), a, c.Body())
 	if err != nil {
-		slog.Error("failed to ingest alert", "error", err, "raw_alert_id", a.RawAlertID)
+		slog.Error("failed to process alert", "error", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
 	}
 
-	if ingestResult.Status == "duplicate_ignored" {
-		return c.Status(fiber.StatusOK).JSON(fiber.Map{
-			"status":      ingestResult.Status,
-			"fingerprint": ingestResult.Fingerprint,
-		})
+	status := fiber.StatusCreated
+	if result.Status == "duplicate_ignored" || result.Status == "suppressed_known_pattern" {
+		status = fiber.StatusOK
 	}
 
-	// Suppression only applies to firing alerts - a resolve event always
-	// goes straight to the correlation engine so an open incident can
-	// actually be closed.
-	if a.Status == model.AlertStatusFiring {
-		rule, err := h.suppressionSvc.Match(c.Context(), a.ResourceType, a.MetricType, a.Timestamp)
-		if err != nil {
-			slog.Error("failed to check suppression rules", "error", err, "fingerprint", ingestResult.Fingerprint)
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
-		}
-		if rule != nil {
-			return c.Status(fiber.StatusOK).JSON(fiber.Map{
-				"status":             "suppressed_known_pattern",
-				"fingerprint":        ingestResult.Fingerprint,
-				"suppression_rule":   rule.Name,
-				"suppression_reason": rule.Reason,
-			})
-		}
-	}
-
-	correlationResult, err := h.correlationSvc.Correlate(
-		c.Context(),
-		ingestResult.Fingerprint,
-		model.AlertIdentity{
-			Account:      a.Account,
-			ResourceID:   a.ResourceID,
-			ResourceType: a.ResourceType,
-			MetricType:   a.MetricType,
-		},
-		a.Status == model.AlertStatusResolved,
-	)
-	if err != nil {
-		slog.Error("failed to correlate alert", "error", err, "fingerprint", ingestResult.Fingerprint)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
-	}
-
-	response := fiber.Map{
-		"status":            ingestResult.Status,
-		"fingerprint":       ingestResult.Fingerprint,
-		"incident_id":       correlationResult.IncidentID,
-		"correlation_event": correlationResult.Event,
-	}
-
-	if correlationResult.Event == service.CorrelationEventNewIncident {
-		suggestions, err := h.rcaSvc.Suggest(c.Context(), a.ResourceType, a.MetricType)
-		if err != nil {
-			slog.Error("failed to suggest RCA", "error", err)
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
-		}
-
-		if len(suggestions) > 0 {
-			response["rca_suggestions"] = suggestions
-		}
-	}
-
-	return c.Status(fiber.StatusCreated).JSON(response)
+	return c.Status(status).JSON(result)
 }

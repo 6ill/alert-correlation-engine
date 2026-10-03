@@ -8,9 +8,12 @@ import (
 )
 
 type Config struct {
-	DatabaseURL string
-	RedisAddr   string
-	Port        string
+	DatabaseURL         string
+	RedisAddr           string
+	Port                string
+	TCOPWebhookToken    string
+	TCOPWebhookUsername string // empty disables the BasicAuth layer
+	TCOPWebhookPassword string
 }
 
 func Load() Config {
@@ -18,9 +21,12 @@ func Load() Config {
 		log.Println("Not found .env, use default env variables")
 	}
 	return Config{
-		DatabaseURL: getEnv("DATABASE_URL", ""),
-		RedisAddr:   getEnv("REDIS_ADDR", "localhost:6379"),
-		Port:        getEnv("PORT", "8080"),
+		DatabaseURL:         getEnv("DATABASE_URL", ""),
+		RedisAddr:           getEnv("REDIS_ADDR", "localhost:6379"),
+		Port:                getEnv("PORT", "8080"),
+		TCOPWebhookToken:    getEnv("TCOP_WEBHOOK_TOKEN", ""),
+		TCOPWebhookUsername: getEnv("TCOP_WEBHOOK_USERNAME", ""),
+		TCOPWebhookPassword: getEnv("TCOP_WEBHOOK_PASSWORD", ""),
 	}
 }
 
