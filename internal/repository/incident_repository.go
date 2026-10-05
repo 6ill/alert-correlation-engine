@@ -129,3 +129,19 @@ func (r *IncidentRepository) List(ctx context.Context, status string, limit int)
 		return *inc, nil
 	})
 }
+
+// FindOpenByFingerprint looks up a still-open incident by fingerprint. Used
+// as the Redis fallback path when the active-window key is missing - either
+// because the window genuinely expired, or because Redis lost its state
+// (restart, eviction). The caller is responsible for distinguishing the two
+// by comparing LastSeen against the configured correlation window.
+func (r IncidentRepository) FindOpenByFingerprint(ctx context.Context, fingerprint string) (*model.Incident, error) {
+	row := r.pool.QueryRow(ctx, `
+		SELECT id, fingerprint, account, resource_id, resource_type, metric_type, status, occurrence_count, flap_count, first_seen, last_seen, resolved_at, updated_at
+		FROM incidents
+		WHERE status = 'open' AND fingerprint = $1
+		ORDER BY updated_at DESC
+		LIMIT 1
+	`, fingerprint)
+	return scanIncident(row)
+}

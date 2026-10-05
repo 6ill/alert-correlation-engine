@@ -52,7 +52,7 @@ func NewCorrelationRepository(client *redis.Client) *CorrelationRepository {
 func activeKey(fingerprint string) string { return "active:" + fingerprint }
 func graceKey(fingerprint string) string  { return "grace:" + fingerprint }
 
-func windowFor(metricType string) time.Duration {
+func (r *CorrelationRepository) WindowFor(metricType string) time.Duration {
 	if d, ok := correlationWindows[metricType]; ok {
 		return d
 	}
@@ -70,7 +70,7 @@ func (r *CorrelationRepository) GetActiveIncident(ctx context.Context, fingerpri
 // expires, the next alert with this fingerprint is treated as a new
 // incident rather than merged into this one.
 func (r *CorrelationRepository) SetActive(ctx context.Context, fingerprint string, incidentID int64, metricType string) error {
-	return r.client.Set(ctx, activeKey(fingerprint), incidentID, windowFor(metricType)).Err()
+	return r.client.Set(ctx, activeKey(fingerprint), incidentID, r.WindowFor(metricType)).Err()
 }
 
 // GetGraceIncident returns the incident ID still within its flapping grace

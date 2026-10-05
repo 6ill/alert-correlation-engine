@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/6ill/alert-correlation-engine/internal/model"
 	"github.com/6ill/alert-correlation-engine/internal/repository"
@@ -59,6 +60,23 @@ func (s *CorrelationService) handleFiring(ctx context.Context, fingerprint strin
 		}
 		return CorrelationResult{IncidentID: incidentID, Event: CorrelationEventMerged}, nil
 	} else if !errors.Is(err, repository.ErrCorrelationStateNotFound) {
+		return CorrelationResult{}, err
+	}
+
+	// Redis has no active window, but that might mean it lost its
+	// state (restart, eviction), not that the window genuinely expired.
+	// Check Postgres, the durable source of truth, before concluding this is a new incident.
+	if incident, err := s.incidents.FindOpenByFingerprint(ctx, fingerprint); err == nil {
+		if time.Since(incident.LastSeen) <= s.correlation.WindowFor(identity.MetricType) {
+			if err := s.incidents.IncrementOccurrence(ctx, incident.ID); err != nil {
+				return CorrelationResult{}, err
+			}
+			if err := s.correlation.SetActive(ctx, fingerprint, incident.ID, identity.MetricType); err != nil {
+				return CorrelationResult{}, err
+			}
+			return CorrelationResult{IncidentID: incident.ID, Event: CorrelationEventMerged}, nil
+		}
+	} else if !errors.Is(err, repository.ErrIncidentNotFound) {
 		return CorrelationResult{}, err
 	}
 
