@@ -1,4 +1,4 @@
-include .env
+-include .env
 
 .PHONY: confirm
 confirm:
@@ -18,3 +18,19 @@ db/migrations/down: confirm
 db/migrations/new: confirm
 	@echo 'Creating migration files for ${name}...'
 	migrate create -seq -ext=.sql -dir=./migrations ${name}
+
+.PHONY: docker/prod/build
+docker/prod/build:
+	docker compose -f docker-compose.prod.yml build
+
+.PHONY: docker/prod/migrate
+docker/prod/migrate: confirm
+	docker compose -f docker-compose.prod.yml --env-file .env.production --profile migrate run --rm migrate
+
+.PHONY: docker/prod/up
+docker/prod/up:
+	docker compose -f docker-compose.prod.yml --env-file .env.production up -d
+
+.PHONY: docker/prod/down
+docker/prod/down:
+	docker compose -f docker-compose.prod.yml --env-file .env.production down
