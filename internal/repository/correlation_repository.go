@@ -22,7 +22,7 @@ var ErrCorrelationStateNotFound = errors.New("correlation state not found")
 var correlationWindows = map[string]time.Duration{
 	"disk_util":   15 * time.Minute,
 	"disk_read":   15 * time.Minute,
-	"cpu_util":    1 * time.Hour,
+	"cpu_usage":   1 * time.Hour,
 	"memory_util": 4 * time.Hour,
 }
 
