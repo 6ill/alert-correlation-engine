@@ -32,7 +32,6 @@ func (h *TCOPWebhookHandler) RegisterRoutes(router fiber.Router) {
 	webhooks.Post("/:token", h.Receive)
 }
 
-
 func (h *TCOPWebhookHandler) Receive(c *fiber.Ctx) error {
 	if c.Params("token") != h.token {
 		return c.SendStatus(fiber.StatusNotFound)
@@ -54,6 +53,14 @@ func (h *TCOPWebhookHandler) Receive(c *fiber.Ctx) error {
 		slog.Error("failed to process TCOP alert", "error", err, "session_id", payload.SessionID)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal error"})
 	}
-	
+
+	slog.Info("tcop alert processed",
+		"session_id", payload.SessionID,
+		"alarm_status", string(payload.AlarmStatus),
+		"result", result.Status,
+		"correlation_event", result.CorrelationEvent,
+		"incident_id", result.IncidentID,
+	)
+
 	return c.Status(fiber.StatusCreated).JSON(result)
 }
