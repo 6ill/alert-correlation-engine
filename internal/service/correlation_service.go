@@ -107,11 +107,19 @@ func (s *CorrelationService) handleFiring(ctx context.Context, fingerprint strin
 func (s *CorrelationService) handleResolve(ctx context.Context, fingerprint string) (CorrelationResult, error) {
 	incidentID, err := s.correlation.GetActiveIncident(ctx, fingerprint)
 	if errors.Is(err, repository.ErrCorrelationStateNotFound) {
-		// Nothing to resolve - this can legitimately happen if the active
-		// window already expired before the resolve event arrived.
-		return CorrelationResult{Event: CorrelationEventResolveIgnored}, nil
-	}
-	if err != nil {
+		// No active window in Redis, but real alarms routinely outlast the
+		// correlation window (and TCOP may push only at trigger and recovery).
+		// An explicit resolve is authoritative, so fall back to Postgres
+		// without any staleness check.
+		incident, findErr := s.incidents.FindOpenByFingerprint(ctx, fingerprint)
+		if errors.Is(findErr, repository.ErrIncidentNotFound) {
+			return CorrelationResult{Event: CorrelationEventResolveIgnored}, nil
+		}
+		if findErr != nil {
+			return CorrelationResult{}, findErr
+		}
+		incidentID = incident.ID
+	} else if err != nil {
 		return CorrelationResult{}, err
 	}
 

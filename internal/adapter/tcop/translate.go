@@ -10,11 +10,9 @@ import (
 )
 
 // resourceIDKeys lists, per namespace, the dimension keys known to carry the
-// instance ID, in priority order. Confirmed for CVM, MySQL (CDB), and Redis
-// only - every other namespace falls back to "objId" (present in every
-// documented sample, though it's a composite backend identifier rather than
-// a clean instance ID). Extend this table as real alarms from other
-// services are observed.
+// instance ID, in priority order. "unInstanceId" for CVM is confirmed from a
+// real payload; the others come from Tencent's docs. Every other namespace
+// falls back to "objId".
 var resourceIDKeys = map[string][]string{
 	"qce/cvm":       {"unInstanceId"},
 	"qce/cdb":       {"uInstanceId"},
@@ -30,6 +28,9 @@ const fallbackResourceIDKey = "objId"
 // with a documented assumption, since a unexpected field from a real cloud
 // provider shouldn't drop the whole alert.
 func Translate(p Payload) (model.Alert, error) {
+	if p.SessionID == "" {
+		return model.Alert{}, fmt.Errorf("tcop payload missing sessionId")
+	}
 	if p.AlarmPolicyInfo.Conditions.MetricName == "" {
 		return model.Alert{}, fmt.Errorf("tcop payload missing alarmPolicyInfo.conditions.metricName")
 	}
@@ -39,15 +40,15 @@ func Translate(p Payload) (model.Alert, error) {
 		status = model.AlertStatusResolved
 	}
 
-	value, _ := strconv.ParseFloat(p.AlarmPolicyInfo.Conditions.CurrentValue, 64)
+	value, _ := strconv.ParseFloat(string(p.AlarmPolicyInfo.Conditions.CurrentValue), 64)
 
-	account := p.AlarmObjInfo.Uin
+	account := string(p.AlarmObjInfo.Uin)
 	if account == "" {
-		account = p.AlarmObjInfo.AppID
+		account = string(p.AlarmObjInfo.AppID)
 	}
 
 	return model.Alert{
-		RawAlertID:   p.SessionID,
+		RawAlertID:   rawAlertID(p),
 		Account:      account,
 		ResourceID:   resolveResourceID(p.AlarmObjInfo.Namespace, p.AlarmObjInfo.Dimensions),
 		ResourceType: strings.TrimPrefix(p.AlarmObjInfo.Namespace, "qce/"),
@@ -59,15 +60,23 @@ func Translate(p Payload) (model.Alert, error) {
 	}, nil
 }
 
-func resolveResourceID(namespace string, dimensions map[string]string) string {
+// rawAlertID builds the idempotency key. sessionId alone identifies the whole
+// alarm record, so a recovery notification likely shares it with the firing
+// one and would be dropped as a duplicate. Adding status, durationTime and
+// recoverTime makes the key unique per notification, while a webhook retry of
+// the same notification still produces an identical key.
+func rawAlertID(p Payload) string {
+	return fmt.Sprintf("%s:%s:%s:%s", p.SessionID, p.AlarmStatus, p.DurationTime, p.RecoverTime)
+}
+
+func resolveResourceID(namespace string, dimensions map[string]flexString) string {
 	for _, key := range resourceIDKeys[namespace] {
 		if v, ok := dimensions[key]; ok && v != "" {
-			return v
+			return string(v)
 		}
 	}
-
-	if v, ok := dimensions[fallbackResourceIDKey]; ok && v != "" {
-		return v
+	if v, ok := dimensions[fallbackResourceIDKey]; ok {
+		return string(v)
 	}
 
 	return ""
