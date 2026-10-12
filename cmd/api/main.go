@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/gofiber/fiber/v2"
 	fiberlogger "github.com/gofiber/fiber/v2/middleware/logger"
@@ -67,7 +68,9 @@ func main() {
 	tcopWebhookHandler := handler.NewTCOPWebhookHandler(alertPipelineSvc, cfg.TCOPWebhookToken, tcopBasicAuthUsers)
 
 	app := fiber.New()
-	app.Use(fiberlogger.New())
+	app.Use(fiberlogger.New(fiberlogger.Config{
+		Format: "${time} | ${status} | ${latency} | ${ip} | ${method} | ${route} | ${error}\n",
+	}))
 	app.Use(recover.New())
 
 	httpserver.NewRouter(app, alertHandler, rcaHandler, incidentHandler, statsHandler, tcopWebhookHandler)
