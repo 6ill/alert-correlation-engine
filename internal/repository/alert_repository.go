@@ -21,10 +21,10 @@ func NewAlertRepository(pool *pgxpool.Pool) *AlertRepository {
 // Return inserted=false if raw_alert_id exists
 func (r *AlertRepository) Insert(ctx context.Context, a model.Alert, fingerprint string, rawPayload []byte) (inserted bool, err error) {
 	tag, err := r.pool.Exec(ctx, `
-		INSERT INTO alerts (raw_alert_id, account, resource_id, resource_type, metric_type, value, severity, fingerprint, payload, received_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO alerts (raw_alert_id, account, resource_id, resource_type, metric_type, value, severity, status, fingerprint, payload, received_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (raw_alert_id) DO NOTHING
-	`, a.RawAlertID, a.Account, a.ResourceID, a.ResourceType, a.MetricType, a.Value, a.Severity, fingerprint, rawPayload, a.Timestamp)
+	`, a.RawAlertID, a.Account, a.ResourceID, a.ResourceType, a.MetricType, a.Value, a.Severity, string(a.Status), fingerprint, rawPayload, a.Timestamp)
 	if err != nil {
 		return false, err
 	}
@@ -39,7 +39,7 @@ func (r *AlertRepository) FindRecentByResource(ctx context.Context, account, res
 	rows, err := r.pool.Query(ctx, `
 		SELECT raw_alert_id, metric_type, value, severity, received_at
 		FROM alerts
-		WHERE account = $1 AND resource_id = $2 AND fingerprint != $3 AND received_at >= $4
+		WHERE account = $1 AND resource_id = $2 AND fingerprint != $3 AND received_at >= $4 AND status = 'firing'
 		ORDER BY received_at DESC
 		LIMIT $5
 	`, account, resourceID, excludeFingerprint, since, limit)
