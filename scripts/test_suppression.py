@@ -2,7 +2,7 @@
 Synthetic alert generator for testing the ingestion, suppression, and
 correlation pipeline end to end.
 
-Usage: python scripts/generate_alerts.py
+Usage: API_AUTH=admin:password python scripts/test_suppressions.py
 Requires: pip install requests
 
 Before running the suppression tests, insert the seed rule:
@@ -16,7 +16,10 @@ import time
 import uuid
 
 import requests
+import os
 
+API_AUTH = os.environ.get("API_AUTH")  # "user:password"
+AUTH = tuple(API_AUTH.split(":", 1)) if API_AUTH else None
 API_URL = "http://localhost:8080/api/v1/alerts/"
 
 SCENARIOS = [
@@ -42,7 +45,7 @@ SCENARIOS = [
 def send(payload, raw_id=None):
     body = dict(payload)
     body["raw_alert_id"] = raw_id or str(uuid.uuid4())
-    resp = requests.post(API_URL, json=body, timeout=5)
+    resp = requests.post(API_URL, auth=AUTH, json=body, timeout=5)
     print(f"{resp.status_code} {resp.json()}")
     return body["raw_alert_id"]
 

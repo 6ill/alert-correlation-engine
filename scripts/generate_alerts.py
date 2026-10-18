@@ -3,15 +3,17 @@ Generator alarm sintetis untuk testing endpoint ingestion.
 Meniru pola alarm nyata (bukan data asli kantor) + skenario retry webhook
 dan alarm berulang, untuk memverifikasi idempotensi minggu 1.
 
-Pakai: python scripts/generate_alerts.py
+Pakai: API_AUTH=admin:password python scripts/generate_alerts.py
 Butuh: pip install requests
 """
 
 import time
 import uuid
+import os
 
 import requests
-
+API_AUTH = os.environ.get("API_AUTH")  # "user:password"
+AUTH = tuple(API_AUTH.split(":", 1)) if API_AUTH else None
 API_URL = "http://localhost:8080/api/v1/alerts"
 
 SCENARIOS = [
@@ -45,7 +47,7 @@ SCENARIOS = [
 def send(payload, raw_id=None):
     body = dict(payload)
     body["raw_alert_id"] = raw_id or str(uuid.uuid4())
-    resp = requests.post(API_URL, json=body, timeout=5)
+    resp = requests.post(API_URL, auth=AUTH, json=body, timeout=5)
     print(f"{resp.status_code} {resp.json()}")
     return body["raw_alert_id"]
 

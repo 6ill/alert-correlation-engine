@@ -64,3 +64,7 @@ func (h *TCOPWebhookHandler) Receive(c *fiber.Ctx) error {
 
 	return c.Status(fiber.StatusCreated).JSON(result)
 }
+
+func (h *TCOPWebhookHandler) PublicPathPrefixes() []string {
+	return []string{"/webhooks/tcop/"}
+}

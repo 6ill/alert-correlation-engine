@@ -8,6 +8,8 @@ services:
       TCOP_WEBHOOK_TOKEN: ${TCOP_WEBHOOK_TOKEN}
       TCOP_WEBHOOK_USERNAME: ${TCOP_WEBHOOK_USERNAME}
       TCOP_WEBHOOK_PASSWORD: ${TCOP_WEBHOOK_PASSWORD}
+      API_ADMIN_USERNAME: ${API_ADMIN_USERNAME}
+      API_ADMIN_PASSWORD: ${API_ADMIN_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy

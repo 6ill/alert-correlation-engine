@@ -26,6 +26,10 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		slog.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
 
 	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
 	if err != nil {
@@ -73,7 +77,11 @@ func main() {
 	}))
 	app.Use(recover.New())
 
-	httpserver.NewRouter(app, alertHandler, rcaHandler, incidentHandler, statsHandler, tcopWebhookHandler)
+	httpserver.NewRouter(
+		app,
+		httpserver.AdminCredentials{Username: cfg.AdminUsername, Password: cfg.AdminPassword},
+		alertHandler, rcaHandler, incidentHandler, statsHandler, tcopWebhookHandler,
+	)
 
 	go func() {
 		slog.Info("server starting", "port", cfg.Port)
