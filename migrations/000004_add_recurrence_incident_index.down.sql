@@ -1,0 +1,1 @@
+DROP INDEX idx_incidents_fingerprint_first_seen;

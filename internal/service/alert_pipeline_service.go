@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/6ill/alert-correlation-engine/internal/model"
 )
@@ -13,6 +14,7 @@ type PipelineResult struct {
 	CorrelationEvent  CorrelationEvent     `json:"correlation_event,omitempty"`
 	SuppressionRule   string               `json:"suppression_rule,omitempty"`
 	SuppressionReason string               `json:"suppression_reason,omitempty"`
+	Recurrence        *model.Recurrence    `json:"recurrence,omitempty"`
 	RCASuggestions    []model.RCAKnowledge `json:"rca_suggestions,omitempty"`
 }
 
@@ -27,6 +29,7 @@ type AlertPipelineService struct {
 	suppressionSvc *SuppressionService
 	correlationSvc *CorrelationService
 	rcaSvc         *RCAService
+	incidentSvc    *IncidentService
 }
 
 func NewAlertPipelineService(
@@ -34,12 +37,14 @@ func NewAlertPipelineService(
 	suppressionSvc *SuppressionService,
 	correlationSvc *CorrelationService,
 	rcaSvc *RCAService,
+	incidentSvc *IncidentService,
 ) *AlertPipelineService {
 	return &AlertPipelineService{
 		alertSvc:       alertSvc,
 		suppressionSvc: suppressionSvc,
 		correlationSvc: correlationSvc,
 		rcaSvc:         rcaSvc,
+		incidentSvc:    incidentSvc,
 	}
 }
 
@@ -92,9 +97,17 @@ func (p *AlertPipelineService) Process(ctx context.Context, a model.Alert, rawPa
 	if correlationResult.Event == CorrelationEventNewIncident {
 		suggestions, err := p.rcaSvc.Suggest(ctx, a.ResourceType, a.MetricType)
 		if err != nil {
-			return PipelineResult{}, err
+			slog.Warn("failed to load RCA suggestions", "error", err, "incident_id", correlationResult.IncidentID)
+		} else {
+			result.RCASuggestions = suggestions
 		}
-		result.RCASuggestions = suggestions
+
+		recurrence, err := p.incidentSvc.Recurrence(ctx, correlationResult.IncidentID)
+		if err != nil {
+			slog.Warn("failed to load incident recurrence", "error", err, "incident_id", correlationResult.IncidentID)
+		} else {
+			result.Recurrence = &recurrence
+		}
 	}
 
 	return result, nil

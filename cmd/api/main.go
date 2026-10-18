@@ -59,7 +59,7 @@ func main() {
 	rcaSvc := service.NewRCAService(rcaRepo)
 	incidentSvc := service.NewIncidentService(incidentRepo, alertRepo, rcaSvc)
 	statsSvc := service.NewStatsService(statsRepo)
-	alertPipelineSvc := service.NewAlertPipelineService(alertSvc, suppressionSvc, correlationSvc, rcaSvc)
+	alertPipelineSvc := service.NewAlertPipelineService(alertSvc, suppressionSvc, correlationSvc, rcaSvc, incidentSvc)
 
 	alertHandler := handler.NewAlertHandler(alertPipelineSvc)
 	rcaHandler := handler.NewRCAHandler(rcaSvc)

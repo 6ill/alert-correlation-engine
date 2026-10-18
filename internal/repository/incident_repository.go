@@ -145,3 +145,45 @@ func (r IncidentRepository) FindOpenByFingerprint(ctx context.Context, fingerpri
 	`, fingerprint)
 	return scanIncident(row)
 }
+
+// Recurrence counts incidents that share this incident's fingerprint and
+// started before it. Those within windowDays before it began, and all of
+// them. A single query anchored on the incident ID, so callers never need the
+// fingerprint or start time. An aggregate over zero joined rows still returns
+// one row (0, 0, NULL), which is exactly the "first time ever" answer.
+func (r *IncidentRepository) Recurrence(ctx context.Context, incidentID int64, windowDays int) (model.Recurrence, error) {
+	rec := model.Recurrence{WindowDays: windowDays}
+	err := r.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE prev.first_seen >= cur.first_seen - make_interval(days => $2::int)),
+			COUNT(*),
+			MAX(prev.first_seen)
+		FROM incidents cur
+		JOIN incidents prev
+			ON prev.fingerprint = cur.fingerprint AND prev.first_seen < cur.first_seen
+		WHERE cur.id = $1
+	`, incidentID, windowDays).Scan(&rec.CountInWindow, &rec.TotalPrevious, &rec.LastIncidentAt)
+	return rec, err
+}
+
+// ListPrevious returns earlier incidents with the same fingerprint, newest first.
+func (r *IncidentRepository) ListPrevious(ctx context.Context, incidentID int64, limit int) ([]model.IncidentSummary, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, status, occurrence_count, flap_count, first_seen, last_seen, resolved_at
+		FROM incidents
+		WHERE fingerprint = (SELECT fingerprint FROM incidents WHERE id = $1)
+		  AND first_seen < (SELECT first_seen FROM incidents WHERE id = $1)
+		ORDER BY first_seen DESC
+		LIMIT $2
+	`, incidentID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (model.IncidentSummary, error) {
+		var s model.IncidentSummary
+		err := row.Scan(&s.ID, &s.Status, &s.OccurrenceCount, &s.FlapCount, &s.FirstSeen, &s.LastSeen, &s.ResolvedAt)
+		return s, err
+	})
+}
