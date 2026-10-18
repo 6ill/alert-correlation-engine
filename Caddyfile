@@ -1,3 +1,12 @@
 billalerts.duckdns.org {
-	reverse_proxy api:8080
+	@public path /api/v1/webhooks/tcop/* /healthz
+	handle @public {
+		reverse_proxy api:8080
+	}
+	handle {
+		basic_auth {
+			admin $2a$14$FC1pgB7BbN7AsvcQXW.5E.ZKaZtwofoD8MEGXfo0/6FaAj0bvrxhO
+		}
+		reverse_proxy api:8080
+	}
 }
